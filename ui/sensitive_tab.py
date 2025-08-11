@@ -124,9 +124,11 @@ class SensitiveTab(QWidget):
         original_sensitive = self.sensitive_table.item(row, 0).text()
         original_replacement = self.sensitive_table.item(row, 1).text()
 
-        # 创建编辑对话框
+        # 创建编辑对话框，移除问号按钮
         dialog = QDialog(self)
         dialog.setWindowTitle("编辑敏感词")
+        # 关键修改：移除窗口的上下文帮助按钮（问号按钮）
+        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
         form_layout = QFormLayout(dialog)
 
         sensitive_edit = QLineEdit(original_sensitive)

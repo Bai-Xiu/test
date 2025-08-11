@@ -109,7 +109,6 @@ class LogAIProcessor:
                     encodings=self.supported_encodings
                 )
                 data_dict[safe_file] = df
-                print(f"✅ 已读取文件: {safe_file}, 共 {len(df)} 行")
             except Exception as e:
                 raise RuntimeError(f"读取文件 {safe_file} 失败: {str(e)}")
 
