@@ -148,15 +148,21 @@ class LogAIProcessor:
     数据信息: {json.dumps(file_info, ensure_ascii=False)}
 
     说明：
-    重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
+    *重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
+    0. 注意代码规范，避免参数未定义的错误出现
     1. 已存在变量data_dict（文件名到DataFrame的字典），可直接使用
     2. 必须导入所需的库（如pandas）
     3. 必须定义两个变量：
-       - result_table：处理后的DataFrame结果（必须存在）
-       - summary：字符串类型的总结
+        - result_table：处理后的DataFrame结果（必须存在）
+        - summary：字符串类型的总结，根据用户要求，可以包含：
+            * 关键分析结论（如统计数量、趋势、异常点等）
+            * 数据中发现的规律总结
+            * 针对问题的解决方案或建议
+            * 其他用户要求但无法被作为代码执行的信息
+             禁止使用默认值，必须根据分析结果生成具体内容
     4. 不要包含任何函数定义，直接编写可执行代码
     5. 不需要return语句，只需确保定义了上述两个变量
-    6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型
+    6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型（如df['level'] = df['level'].astype(str)）
     7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
 
         response = self.client.completions_create(
@@ -239,5 +245,6 @@ class LogAIProcessor:
         summary = response.choices[0].message.content.strip()
         if self.sensitive_manager:
             summary = self.sensitive_manager.restore_sensitive_info(summary)
+
 
         return {"summary": summary}
