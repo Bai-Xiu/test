@@ -117,7 +117,7 @@ class LogAIProcessor:
         return data_dict
 
     def generate_processing_code(self, user_request, file_names):
-        """生成完整可执行代码，而非函数内部逻辑"""
+        """生成完整可执行代码"""
         if not self.client:
             # 默认代码：直接返回所有数据
             return """import pandas as pd
@@ -126,34 +126,39 @@ class LogAIProcessor:
 
         data_dict = self._load_file_data(file_names)
 
-        # 准备文件元数据
+        # 准备文件元数据（新增：对元数据中的样本进行敏感词替换）
         file_info = {}
         for filename, df in data_dict.items():
+            # 处理样本数据中的敏感信息
+            raw_sample = df.head(2).to_dict(orient='records')
+            processed_sample = raw_sample
+
+            if self.sensitive_manager:
+                # 序列化后替换敏感词
+                sample_str = json.dumps(raw_sample, ensure_ascii=False)
+                processed_sample_str = self.sensitive_manager.replace_sensitive_info(sample_str)
+                processed_sample = json.loads(processed_sample_str)
+
             file_info[filename] = {
                 "columns": df.columns.tolist(),
-                "sample": df.head(2).to_dict(orient='records')
+                "sample": processed_sample  # 使用处理后的样本
             }
 
         prompt = f"""根据用户请求编写完整的Python处理代码:
-用户需求: {user_request}
-数据信息: {json.dumps(file_info, ensure_ascii=False)}
+    用户需求: {user_request}
+    数据信息: {json.dumps(file_info, ensure_ascii=False)}
 
-说明：
-重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
-1. 已存在变量data_dict（文件名到DataFrame的字典），可直接使用
-2. 必须导入所需的库（如pandas）
-3. 必须定义两个变量：
-   - result_table：处理后的DataFrame结果（必须存在）
-   - summary：字符串类型的总结，根据用户要求，可以包含：
-     * 关键分析结论（如统计数量、趋势、异常点等）
-     * 数据中发现的规律总结
-     * 针对问题的解决方案或建议
-     * 其他用户要求但无法被作为代码执行的信息
-     禁止使用默认值，必须根据分析结果生成具体内容
-4. 不要包含任何函数定义，直接编写可执行代码
-5. 不需要return语句，只需确保定义了上述两个变量
-6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型（如df['level'] = df['level'].astype(str)）
-7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
+    说明：
+    重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
+    1. 已存在变量data_dict（文件名到DataFrame的字典），可直接使用
+    2. 必须导入所需的库（如pandas）
+    3. 必须定义两个变量：
+       - result_table：处理后的DataFrame结果（必须存在）
+       - summary：字符串类型的总结
+    4. 不要包含任何函数定义，直接编写可执行代码
+    5. 不需要return语句，只需确保定义了上述两个变量
+    6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型
+    7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
 
         response = self.client.completions_create(
             model='deepseek-reasoner',
@@ -163,7 +168,6 @@ class LogAIProcessor:
         )
 
         code_block = response.choices[0].message.content.strip()
-
         return code_block
 
     def direct_answer(self, user_request, file_names):

@@ -2,6 +2,7 @@ import os
 import pandas as pd
 import json
 import uuid
+import hashlib  # 新增：用于生成更安全的替换标识
 
 
 class SensitiveInfoManager:
@@ -51,13 +52,17 @@ class SensitiveInfoManager:
         return text
 
     def add_sensitive_word(self, sensitive, replacement=None):
-        """添加敏感词及其替换词，如未提供替换词则自动生成"""
+        """添加敏感词及其替换词，自动生成高安全性替换词"""
         if not sensitive:
             return False
 
-        # 自动生成替换词（如UUID）
+        # 优化：生成不可猜测的替换词（结合哈希和UUID）
         if not replacement:
-            replacement = f"[MASK_{uuid.uuid4().hex[:8]}]"
+            # 生成敏感词的哈希摘要（避免相同敏感词生成不同替换词）
+            sensitive_hash = hashlib.sha256(sensitive.encode()).hexdigest()[:8]
+            # 附加UUID确保唯一性
+            unique_id = uuid.uuid4().hex[:8]
+            replacement = f"[PROTECTED_{sensitive_hash}_{unique_id}]"
 
         self.sensitive_map[sensitive] = replacement
         self.reverse_map[replacement] = sensitive
@@ -80,9 +85,26 @@ class SensitiveInfoManager:
 
             count = 0
             for _, row in df.iterrows():
-                sensitive = str(row['sensitive']).strip()
-                replacement = str(row.get('replacement', '')).strip() if 'replacement' in df.columns else None
+                # 跳过sensitive列为空值（NaN）的行
+                if pd.isna(row['sensitive']):
+                    continue
 
+                # 转换为字符串并去除首尾空格
+                sensitive = str(row['sensitive']).strip()
+                # 跳过空字符串的敏感词
+                if not sensitive:
+                    continue
+
+                # 处理替换词（同样过滤空值）
+                if 'replacement' in df.columns:
+                    if pd.isna(row['replacement']):
+                        replacement = None
+                    else:
+                        replacement = str(row['replacement']).strip() or None
+                else:
+                    replacement = None
+
+                # 添加有效敏感词
                 if self.add_sensitive_word(sensitive, replacement):
                     count += 1
 
@@ -94,3 +116,10 @@ class SensitiveInfoManager:
     def get_all_sensitive_words(self):
         """获取所有敏感词列表"""
         return [(k, v) for k, v in self.sensitive_map.items()]
+
+    # 新增：验证替换-还原流程的完整性
+    def verify_integrity(self, test_text):
+        """验证敏感词替换和还原是否完全可逆"""
+        replaced = self.replace_sensitive_info(test_text)
+        restored = self.restore_sensitive_info(replaced)
+        return restored == test_text
