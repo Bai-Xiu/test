@@ -49,13 +49,10 @@ class DeepSeekAPI:
         if not prompt:
             raise ValueError("prompt不能为空")
 
-        # 1. 替换敏感信息前先处理提示词，添加隐私说明
-        full_prompt = f"{self.privacy_note}\n\n用户实际请求：{prompt}"
-
-        # 2. 替换敏感信息
-        original_prompt = full_prompt
-        if self.sensitive_manager:
-            full_prompt = self.sensitive_manager.replace_sensitive_info(full_prompt)
+        # 发送前替换敏感信息（确保处理空值）
+        original_prompt = prompt
+        if self.sensitive_manager and prompt:
+            prompt = self.sensitive_manager.replace_sensitive_info(prompt)
 
         attempt = 0
         while attempt < retry:
@@ -63,16 +60,19 @@ class DeepSeekAPI:
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "你是专业的信息安全日志分析专家，擅长处理带隐私保护标记的文本"},
-                        {"role": "user", "content": full_prompt}
+                        {"role": "system", "content": "你是专业的信息安全日志分析专家"},
+                        {"role": "user", "content": prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
                     stream=False
                 )
 
-                # 3. 还原敏感信息
-                if self.sensitive_manager and response.choices[0].message.content:
+                # 接收后还原敏感信息（确保处理空值）
+                if (self.sensitive_manager and
+                        response.choices and
+                        response.choices[0].message and
+                        response.choices[0].message.content):
                     response.choices[0].message.content = self.sensitive_manager.restore_sensitive_info(
                         response.choices[0].message.content
                     )

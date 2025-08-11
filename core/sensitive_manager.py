@@ -84,32 +84,24 @@ class SensitiveInfoManager:
                 return False, "CSV文件必须包含'sensitive'列"
 
             count = 0
+            existing_sensitive = set(self.sensitive_map.keys())  # 已存在的敏感词集合
+
             for _, row in df.iterrows():
-                # 跳过sensitive列为空值（NaN）的行
-                if pd.isna(row['sensitive']):
-                    continue
-
-                # 转换为字符串并去除首尾空格
                 sensitive = str(row['sensitive']).strip()
-                # 跳过空字符串的敏感词
                 if not sensitive:
-                    continue
+                    continue  # 跳过空敏感词
 
-                # 处理替换词（同样过滤空值）
-                if 'replacement' in df.columns:
-                    if pd.isna(row['replacement']):
-                        replacement = None
-                    else:
-                        replacement = str(row['replacement']).strip() or None
-                else:
-                    replacement = None
+                # 检查是否已存在
+                if sensitive in existing_sensitive:
+                    continue  # 去重处理，不导入重复项
 
-                # 添加有效敏感词
+                replacement = str(row.get('replacement', '')).strip() if 'replacement' in df.columns else None
                 if self.add_sensitive_word(sensitive, replacement):
                     count += 1
+                    existing_sensitive.add(sensitive)  # 添加到已存在集合，避免后续重复
 
             self.save_sensitive_words()
-            return True, f"成功导入 {count} 条敏感词"
+            return True, f"成功导入 {count} 条新敏感词"
         except Exception as e:
             return False, f"导入失败: {str(e)}"
 

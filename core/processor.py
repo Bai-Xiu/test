@@ -171,22 +171,32 @@ class LogAIProcessor:
         return code_block
 
     def direct_answer(self, user_request, file_names):
-        """直接回答模式：生成日志总结，不返回表格数据"""
+        """直接回答模式：生成日志总结，不返回表格数据，确保所有内容经过敏感词处理"""
         data_dict = self._load_file_data(file_names)
 
-        # 收集文件详细信息
+        # 收集文件详细信息（包含敏感词处理）
         file_details = []
         for filename, df in data_dict.items():
+            # 处理数据样本中的敏感信息
+            raw_sample = df.head(min(3, len(df))).to_dict(orient='records')
+            processed_sample = raw_sample
+
+            if self.sensitive_manager:
+                # 序列化后替换敏感词，再反序列化回字典
+                sample_str = json.dumps(raw_sample, ensure_ascii=False, default=str)
+                processed_sample_str = self.sensitive_manager.replace_sensitive_info(sample_str)
+                processed_sample = json.loads(processed_sample_str)
+
             # 基础信息
             details = {
                 "文件名": filename,
                 "记录数": len(df),
                 "列名": df.columns.tolist(),
                 "数据类型分布": {col: str(df[col].dtype) for col in df.columns},
-                "数据样本": df.head(min(3, len(df))).to_dict(orient='records')  # 最多3行样本
+                "数据样本": processed_sample  # 使用处理后的样本
             }
 
-            # 数值列统计
+            # 数值列统计（无需脱敏，数值本身不涉及敏感信息）
             numeric_stats = {}
             for col in df.columns:
                 if pd.api.types.is_numeric_dtype(df[col]):
@@ -201,19 +211,24 @@ class LogAIProcessor:
 
             file_details.append(details)
 
-        # 构建提示词
+        # 处理用户请求中的敏感信息
+        processed_request = user_request
+        if self.sensitive_manager and user_request:
+            processed_request = self.sensitive_manager.replace_sensitive_info(user_request)
+
+        # 构建提示词（使用处理后的请求和文件详情）
         prompt = f"""基于以下日志文件的详细信息，回答用户问题并生成总结:
-    文件详情: {json.dumps(file_details, ensure_ascii=False, default=str)}
-    用户问题: {user_request}
+        文件详情: {json.dumps(file_details, ensure_ascii=False, default=str)}
+        用户问题: {processed_request}
 
-    回答要求:
-    1. 深入分析日志数据特征、潜在规律和关键信息
-    2. 直接给出自然语言总结，不生成任何表格或结构化数据
-    3. 内容具体有针对性，避免泛泛而谈
-    4. 涉及统计信息时自然体现关键数值
-    5. 用简洁易懂的中文表达"""
+        回答要求:
+        1. 深入分析日志数据特征、潜在规律和关键信息
+        2. 直接给出自然语言总结，不生成任何表格或结构化数据
+        3. 内容具体有针对性，避免泛泛而谈
+        4. 涉及统计信息时自然体现关键数值
+        5. 用简洁易懂的中文表达"""
 
-        # 调用API
+        # 调用API（API客户端会进行二次全局校验）
         response = self.client.completions_create(
             model='deepseek-reasoner',
             prompt=prompt,
@@ -221,4 +236,9 @@ class LogAIProcessor:
             temperature=0.6
         )
 
-        return {"summary": response.choices[0].message.content.strip()}
+        # 还原响应中的敏感信息（如果需要展示原始内容）
+        summary = response.choices[0].message.content.strip()
+        if self.sensitive_manager:
+            summary = self.sensitive_manager.restore_sensitive_info(summary)
+
+        return {"summary": summary}

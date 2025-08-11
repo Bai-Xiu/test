@@ -54,7 +54,7 @@ class AnalysisThread(QThread):
         # 准备数据字典
         data_dict = self.processor.load_data_files(self.file_paths)
 
-        # 对数据框中的敏感信息进行替换
+        # 对数据框中的敏感信息进行替换（确保处理空值和非字符串类型）
         if self.processor.sensitive_manager:
             cleaned_data_dict = {}
             for filename, df in data_dict.items():
@@ -63,7 +63,8 @@ class AnalysisThread(QThread):
                 # 对字符串列进行敏感信息替换
                 for col in cleaned_df.select_dtypes(include=['object']).columns:
                     cleaned_df[col] = cleaned_df[col].apply(
-                        lambda x: self.processor.sensitive_manager.replace_sensitive_info(str(x)) if pd.notna(x) else x
+                        lambda x: self.processor.sensitive_manager.replace_sensitive_info(str(x))
+                        if pd.notna(x) else x
                     )
                 cleaned_data_dict[filename] = cleaned_df
             data_dict = cleaned_data_dict
@@ -80,28 +81,24 @@ class AnalysisThread(QThread):
         try:
             exec(full_code, globals(), local_vars)
 
-            # 结果还原 - 确保所有替换词都被还原
+            # 结果还原 - 确保处理空值
             if "result_table" in local_vars and isinstance(local_vars["result_table"], pd.DataFrame):
                 result_table = local_vars["result_table"]
                 # 对结果表格中的字符串列进行敏感信息还原
                 if self.processor.sensitive_manager:
                     for col in result_table.select_dtypes(include=['object']).columns:
                         result_table[col] = result_table[col].apply(
-                            lambda x: self.processor.sensitive_manager.restore_sensitive_info(str(x)) if pd.notna(
-                                x) else x
+                            lambda x: self.processor.sensitive_manager.restore_sensitive_info(str(x))
+                            if pd.notna(x) else x
                         )
                 local_vars["result_table"] = result_table
 
-            # 提取结果（对总结也进行还原）
+            # 提取结果
             result_table = local_vars.get('result_table')
             summary = local_vars.get('summary', '分析完成但未生成总结')
-            if self.processor.sensitive_manager:
-                summary = self.processor.sensitive_manager.restore_sensitive_info(summary)
 
             return {"result_table": result_table, "summary": summary}
         except Exception as e:
-            error_msg = f"代码执行错误: {str(e)}\n\n执行的代码:\n{full_code}"
-            # 错误信息也需要还原敏感词
-            if self.processor.sensitive_manager:
-                error_msg = self.processor.sensitive_manager.restore_sensitive_info(error_msg)
-            return {"summary": error_msg}
+            return {
+                "summary": f"代码执行错误: {str(e)}\n\n执行的代码:\n{full_code}"
+            }
