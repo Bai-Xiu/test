@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
                              QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
-                             QGroupBox, QMessageBox, QHeaderView, QGridLayout)
+                             QGroupBox, QMessageBox, QHeaderView, QGridLayout, QApplication, QMenu)
 from PyQt5.QtCore import Qt
 import os
 from utils.helpers import show_info_message, show_error_message
@@ -75,27 +75,21 @@ class SensitiveWordTab(QWidget):
         word = word_item.text()
 
         # 创建菜单
-        menu = QMessageBox(self)
-        menu.setWindowTitle("操作选择")
-        menu.setText(f"请选择对 '{word}' 的操作")
-        menu.setStandardButtons(QMessageBox.Open | QMessageBox.Save | QMessageBox.Delete)
-        menu.setButtonText(QMessageBox.Open, "修改")
-        menu.setButtonText(QMessageBox.Save, "复制替换词")
-        menu.setButtonText(QMessageBox.Delete, "删除")
+        menu = QMenu(self)
+        edit_action = menu.addAction("修改")
+        copy_action = menu.addAction("复制替换词")
+        delete_action = menu.addAction("删除")
 
-        action = menu.exec_()
+        action = menu.exec_(self.table.mapToGlobal(position))
 
-        if action == QMessageBox.Open:
-            # 修改
+        if action == edit_action:
             self.edit_word_dialog(word)
-        elif action == QMessageBox.Save:
-            # 复制替换词
+        elif action == copy_action:
             replacement = self.table.item(row, 1).text()
             clipboard = QApplication.clipboard()
             clipboard.setText(replacement)
             show_info_message(self, "成功", "替换词已复制到剪贴板")
-        elif action == QMessageBox.Delete:
-            # 删除
+        elif action == delete_action:
             self.delete_word(word)
 
     def add_word_dialog(self):
@@ -178,10 +172,13 @@ class SensitiveWordTab(QWidget):
         )
 
         if reply == QMessageBox.Yes:
+            # 调用处理器的删除方法
             success, msg = self.sensitive_processor.remove_sensitive_word(word)
             if success:
                 self.refresh_table()
-            show_info_message(self, "结果", msg)
+                show_info_message(self, "成功", f"敏感词 '{word}' 已删除")
+            else:
+                show_error_message(self, "失败", msg)
 
     def import_words(self):
         """导入敏感词"""

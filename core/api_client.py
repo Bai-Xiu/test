@@ -38,14 +38,11 @@ class DeepSeekAPI:
         # 官方示例的客户端初始化
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com/v1"  # 更新为正确的API地址
+            base_url="https://api.deepseek.com"
         )
-        # 确保日志目录存在
-        self.log_dir = "api_logs"
-        os.makedirs(self.log_dir, exist_ok=True)
 
     def _log_api_interaction(self, prompt, response, replace_count=None):
-        """记录API交互日志"""
+        """仅在终端显示日志，不写入文件"""
         try:
             log_data = {
                 "timestamp": datetime.now().isoformat(),
@@ -54,15 +51,17 @@ class DeepSeekAPI:
                 "response_length": len(response.choices[0].message.content) if response else 0,
                 "replace_count": replace_count if replace_count else {}
             }
-
-            log_file = os.path.join(self.log_dir, f"api_log_{datetime.now().strftime('%Y%m%d')}.jsonl")
-            with open(log_file, 'a', encoding='utf-8') as f:
-                f.write(json.dumps(log_data, ensure_ascii=False) + '\n')
+            # 仅在终端打印日志信息
+            print("\nAPI交互日志:")
+            print(f"时间: {log_data['timestamp']}")
+            print(f"请求长度: {log_data['prompt_length']} 字符")
+            print(f"响应状态: {log_data['response_status']}")
+            print(f"响应长度: {log_data['response_length']} 字符")
+            print(f"敏感词替换计数: {log_data['replace_count']}")
         except Exception as e:
             print(f"API日志记录失败: {str(e)}")
 
     def completions_create(self, model="deepseek-reasoner", prompt=None, max_tokens=5000, temperature=0.3, retry=3):
-        """使用官方示例的调用参数和格式，集成敏感词处理"""
         if not prompt:
             raise ValueError("prompt不能为空")
 
@@ -70,7 +69,15 @@ class DeepSeekAPI:
         replace_count = None
         processed_prompt = prompt
         if self.sensitive_processor:
+            # 记录用户输入的分析请求
+            print("\n用户原始分析请求:")
+            print(prompt[:500] + ("..." if len(prompt) > 500 else ""))
+
             processed_prompt, replace_count = self.sensitive_processor.replace_sensitive_words(prompt)
+
+            # 显示处理后的请求
+            print("\n处理后的分析请求:")
+            print(processed_prompt[:500] + ("..." if len(processed_prompt) > 500 else ""))
 
         attempt = 0
         while attempt < retry:
