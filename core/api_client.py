@@ -1,5 +1,7 @@
 import time
-import re  # 新增：用于处理提示词
+import json
+import os
+from datetime import datetime
 
 
 class OpenAIStub:
@@ -30,57 +32,80 @@ except ImportError:
 
 
 class DeepSeekAPI:
-    def __init__(self, api_key, sensitive_manager=None):
+    def __init__(self, api_key, sensitive_processor=None):
         self.api_key = api_key
-        self.sensitive_manager = sensitive_manager  # 敏感信息管理器
+        self.sensitive_processor = sensitive_processor  # 添加敏感词处理器
+        # 官方示例的客户端初始化
         self.client = OpenAI(
             api_key=api_key,
-            base_url="https://api.deepseek.com"
+            base_url="https://api.deepseek.com/v1"  # 更新为正确的API地址
         )
-        # 新增：替换词说明提示（告知AI替换词的存在和处理方式）
-        self.privacy_note = """
-注意：文本中包含形如[PROTECTED_xxxx_xxxx]的标记，这些是隐私保护替换词，用于替代敏感信息。
-- 请忽略这些标记的具体格式，将其视为一个完整的语义单元处理
-- 分析时无需关注标记的内部结构，仅需根据上下文理解其在文本中的作用
-- 生成结果时保持这些标记的原样，不要修改或解析它们
-"""
+        # 确保日志目录存在
+        self.log_dir = "api_logs"
+        os.makedirs(self.log_dir, exist_ok=True)
+
+    def _log_api_interaction(self, prompt, response, replace_count=None):
+        """记录API交互日志"""
+        try:
+            log_data = {
+                "timestamp": datetime.now().isoformat(),
+                "prompt_length": len(prompt),
+                "response_status": "success" if response else "error",
+                "response_length": len(response.choices[0].message.content) if response else 0,
+                "replace_count": replace_count if replace_count else {}
+            }
+
+            log_file = os.path.join(self.log_dir, f"api_log_{datetime.now().strftime('%Y%m%d')}.jsonl")
+            with open(log_file, 'a', encoding='utf-8') as f:
+                f.write(json.dumps(log_data, ensure_ascii=False) + '\n')
+        except Exception as e:
+            print(f"API日志记录失败: {str(e)}")
 
     def completions_create(self, model="deepseek-reasoner", prompt=None, max_tokens=5000, temperature=0.3, retry=3):
+        """使用官方示例的调用参数和格式，集成敏感词处理"""
         if not prompt:
             raise ValueError("prompt不能为空")
 
-        # 发送前替换敏感信息（确保处理空值）
-        original_prompt = prompt
-        if self.sensitive_manager and prompt:
-            prompt = self.sensitive_manager.replace_sensitive_info(prompt)
+        # 敏感词替换
+        replace_count = None
+        processed_prompt = prompt
+        if self.sensitive_processor:
+            processed_prompt, replace_count = self.sensitive_processor.replace_sensitive_words(prompt)
 
         attempt = 0
         while attempt < retry:
             try:
+                # 完全对齐官方示例的参数结构
                 response = self.client.chat.completions.create(
                     model=model,
                     messages=[
-                        {"role": "system", "content": "你是专业的信息安全日志分析专家"},
-                        {"role": "user", "content": prompt}
+                        {"role": "system",
+                         "content": "你是专业的信息安全日志分析专家，根据用户要求解决日志分析问题。"},
+                        {"role": "user", "content": processed_prompt}
                     ],
                     max_tokens=max_tokens,
                     temperature=temperature,
                     stream=False
                 )
 
-                # 接收后还原敏感信息（确保处理空值）
-                if (self.sensitive_manager and
-                        response.choices and
-                        response.choices[0].message and
-                        response.choices[0].message.content):
-                    response.choices[0].message.content = self.sensitive_manager.restore_sensitive_info(
+                # 记录API交互日志
+                self._log_api_interaction(processed_prompt, response, replace_count)
+
+                # 敏感词还原
+                if self.sensitive_processor and response.choices[0].message.content:
+                    response.choices[0].message.content = self.sensitive_processor.restore_sensitive_words(
                         response.choices[0].message.content
                     )
 
                 return response
             except Exception as e:
                 attempt += 1
-                print(f"API调用出错 (尝试 {attempt}/{retry}): {str(e)}")
+                error_msg = f"API调用出错 (尝试 {attempt}/{retry}): {str(e)}"
+                print(error_msg)
+
+                # 记录错误日志
+                self._log_api_interaction(processed_prompt, None, replace_count)
+
                 if attempt < retry:
                     time.sleep(2)
         raise Exception(f"API调用失败，已达到最大重试次数 ({retry}次)")

@@ -1,184 +1,218 @@
-from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-                             QTableWidget, QTableWidgetItem, QFileDialog, QLineEdit,
-                             QGroupBox, QHeaderView, QDialog, QFormLayout)
+from PyQt5.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit,
+                             QPushButton, QTableWidget, QTableWidgetItem, QFileDialog,
+                             QGroupBox, QMessageBox, QHeaderView, QGridLayout)
 from PyQt5.QtCore import Qt
+import os
 from utils.helpers import show_info_message, show_error_message
 
 
-class SensitiveTab(QWidget):
-    def __init__(self, sensitive_manager, parent=None):
+class SensitiveWordTab(QWidget):
+    def __init__(self, sensitive_processor, parent=None):
         super().__init__(parent)
-        self.sensitive_manager = sensitive_manager
+        self.sensitive_processor = sensitive_processor
         self.parent = parent
         self.init_ui()
         self.refresh_table()
 
     def init_ui(self):
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
 
-        # 导入按钮
-        import_layout = QHBoxLayout()
-        self.import_btn = QPushButton("导入敏感词表 (CSV)")
-        self.import_btn.clicked.connect(self.import_sensitive_words)
-        import_layout.addWidget(self.import_btn)
-        import_layout.addStretch()
+        # 操作按钮区
+        btn_layout = QHBoxLayout()
 
-        # 添加敏感词
-        add_layout = QHBoxLayout()
-        add_layout.addWidget(QLabel("敏感词:"))
-        self.sensitive_input = QLineEdit()
-        add_layout.addWidget(self.sensitive_input)
+        self.add_btn = QPushButton("添加敏感词")
+        self.add_btn.clicked.connect(self.add_word_dialog)
 
-        add_layout.addWidget(QLabel("替换词:"))
-        self.replacement_input = QLineEdit()
-        add_layout.addWidget(self.replacement_input)
+        self.import_btn = QPushButton("导入敏感词")
+        self.import_btn.clicked.connect(self.import_words)
 
-        self.add_btn = QPushButton("添加")
-        self.add_btn.clicked.connect(self.add_sensitive_word)
-        add_layout.addWidget(self.add_btn)
+        self.export_btn = QPushButton("导出敏感词")
+        self.export_btn.clicked.connect(self.export_words)
 
-        # 敏感词表格
-        table_group = QGroupBox("敏感词列表")
-        table_layout = QVBoxLayout(table_group)
+        btn_layout.addWidget(self.add_btn)
+        btn_layout.addWidget(self.import_btn)
+        btn_layout.addWidget(self.export_btn)
+        btn_layout.addStretch()
 
-        self.sensitive_table = QTableWidget()
-        self.sensitive_table.setColumnCount(2)
-        self.sensitive_table.setHorizontalHeaderLabels(["敏感词", "替换词"])
-        self.sensitive_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.sensitive_table.setEditTriggers(QTableWidget.NoEditTriggers)
-        self.sensitive_table.setSelectionBehavior(QTableWidget.SelectRows)
+        # 表格区域
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["敏感词", "替换词"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self.show_context_menu)
 
-        table_layout.addWidget(self.sensitive_table)
-
-        # 表格操作按钮
-        table_btn_layout = QHBoxLayout()
-        self.edit_btn = QPushButton("编辑选中项")
-        self.edit_btn.clicked.connect(self.edit_selected)
-        table_btn_layout.addWidget(self.edit_btn)
-
-        self.delete_btn = QPushButton("删除选中项")
-        self.delete_btn.clicked.connect(self.delete_selected)
-        table_btn_layout.addWidget(self.delete_btn)
-
-        table_btn_layout.addStretch()
-
-        # 保存按钮
-        self.save_btn = QPushButton("保存更改")
-        self.save_btn.clicked.connect(self.save_changes)
-        table_btn_layout.addWidget(self.save_btn)
-
-        # 组装布局
-        layout.addLayout(import_layout)
-        layout.addLayout(add_layout)
-        layout.addWidget(table_group)
-        layout.addLayout(table_btn_layout)
+        # 添加到主布局
+        main_layout.addLayout(btn_layout)
+        main_layout.addWidget(self.table)
 
     def refresh_table(self):
         """刷新表格数据"""
-        sensitive_words = self.sensitive_manager.get_all_sensitive_words()
-        self.sensitive_table.setRowCount(len(sensitive_words))
+        words = self.sensitive_processor.get_all_sensitive_words()
+        self.table.setRowCount(len(words))
 
-        for row, (sensitive, replacement) in enumerate(sensitive_words):
-            self.sensitive_table.setItem(row, 0, QTableWidgetItem(sensitive))
-            self.sensitive_table.setItem(row, 1, QTableWidgetItem(replacement))
+        for row, (word, replacement) in enumerate(words):
+            word_item = QTableWidgetItem(word)
+            replacement_item = QTableWidgetItem(replacement)
 
-    def import_sensitive_words(self):
-        """导入敏感词表"""
+            word_item.setFlags(word_item.flags() & ~Qt.ItemIsEditable)
+            replacement_item.setFlags(replacement_item.flags() & ~Qt.ItemIsEditable)
+
+            self.table.setItem(row, 0, word_item)
+            self.table.setItem(row, 1, replacement_item)
+
+    def show_context_menu(self, position):
+        """显示右键菜单"""
+        item = self.table.itemAt(position)
+        if not item:
+            return
+
+        row = item.row()
+        word_item = self.table.item(row, 0)
+        if not word_item:
+            return
+
+        word = word_item.text()
+
+        # 创建菜单
+        menu = QMessageBox(self)
+        menu.setWindowTitle("操作选择")
+        menu.setText(f"请选择对 '{word}' 的操作")
+        menu.setStandardButtons(QMessageBox.Open | QMessageBox.Save | QMessageBox.Delete)
+        menu.setButtonText(QMessageBox.Open, "修改")
+        menu.setButtonText(QMessageBox.Save, "复制替换词")
+        menu.setButtonText(QMessageBox.Delete, "删除")
+
+        action = menu.exec_()
+
+        if action == QMessageBox.Open:
+            # 修改
+            self.edit_word_dialog(word)
+        elif action == QMessageBox.Save:
+            # 复制替换词
+            replacement = self.table.item(row, 1).text()
+            clipboard = QApplication.clipboard()
+            clipboard.setText(replacement)
+            show_info_message(self, "成功", "替换词已复制到剪贴板")
+        elif action == QMessageBox.Delete:
+            # 删除
+            self.delete_word(word)
+
+    def add_word_dialog(self):
+        """添加敏感词对话框"""
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("添加敏感词")
+
+        # 创建输入框
+        word_input = QLineEdit()
+        replacement_input = QLineEdit()
+        word_input.setPlaceholderText("请输入敏感词")
+        replacement_input.setPlaceholderText("可选，不填则自动生成")
+
+        # 设置布局
+        layout = QGridLayout()
+        layout.addWidget(QLabel("敏感词:"), 0, 0)
+        layout.addWidget(word_input, 0, 1)
+        layout.addWidget(QLabel("替换词:"), 1, 0)
+        layout.addWidget(replacement_input, 1, 1)
+
+        dialog.layout().addLayout(layout, 1, 0, 1, 2)
+        dialog.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+
+        if dialog.exec_() == QMessageBox.Ok:
+            word = word_input.text().strip()
+            replacement = replacement_input.text().strip()
+
+            success, msg = self.sensitive_processor.add_sensitive_word(word, replacement)
+            if success:
+                self.refresh_table()
+            show_info_message(self, "结果", msg)
+
+    def edit_word_dialog(self, old_word):
+        """编辑敏感词对话框"""
+        # 获取当前替换词
+        replacement = None
+        for word, rep in self.sensitive_processor.get_all_sensitive_words():
+            if word == old_word:
+                replacement = rep
+                break
+
+        if not replacement:
+            show_error_message(self, "错误", "未找到该敏感词")
+            return
+
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("修改敏感词")
+
+        # 创建输入框
+        word_input = QLineEdit(old_word)
+        replacement_input = QLineEdit(replacement)
+
+        # 设置布局
+        layout = QGridLayout()
+        layout.addWidget(QLabel("敏感词:"), 0, 0)
+        layout.addWidget(word_input, 0, 1)
+        layout.addWidget(QLabel("替换词:"), 1, 0)
+        layout.addWidget(replacement_input, 1, 1)
+
+        dialog.layout().addLayout(layout, 1, 0, 1, 2)
+        dialog.setStandardButtons(QMessageBox.Ok | QMessageBox.Cancel)
+
+        if dialog.exec_() == QMessageBox.Ok:
+            new_word = word_input.text().strip()
+            new_replacement = replacement_input.text().strip()
+
+            success, msg = self.sensitive_processor.update_sensitive_word(
+                old_word, new_word, new_replacement
+            )
+            if success:
+                self.refresh_table()
+            show_info_message(self, "结果", msg)
+
+    def delete_word(self, word):
+        """删除敏感词"""
+        reply = QMessageBox.question(
+            self, "确认删除",
+            f"确定要删除敏感词 '{word}' 吗？",
+            QMessageBox.Yes | QMessageBox.No
+        )
+
+        if reply == QMessageBox.Yes:
+            success, msg = self.sensitive_processor.remove_sensitive_word(word)
+            if success:
+                self.refresh_table()
+            show_info_message(self, "结果", msg)
+
+    def import_words(self):
+        """导入敏感词"""
+        supported_exts = [
+            "CSV文件 (*.csv)",
+            "Excel文件 (*.xlsx *.xls)",
+            "所有支持的文件 (*.csv *.xlsx *.xls)"
+        ]
+        file_filter = ";;".join(supported_exts)
+
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "选择CSV文件", "", "CSV文件 (*.csv)"
+            self, "选择导入文件", "", file_filter
         )
 
         if file_path:
-            success, message = self.sensitive_manager.import_from_csv(file_path)
+            success, msg = self.sensitive_processor.import_from_file(file_path)
             if success:
-                show_info_message(self, "导入成功", message)
                 self.refresh_table()
-            else:
-                show_error_message(self, "导入失败", message)
+            show_info_message(self, "导入结果", msg)
 
-    def add_sensitive_word(self):
-        """添加敏感词"""
-        sensitive = self.sensitive_input.text().strip()
-        replacement = self.replacement_input.text().strip() or None
-
-        if not sensitive:
-            show_error_message(self, "输入错误", "敏感词不能为空")
+    def export_words(self):
+        """导出敏感词"""
+        if not self.sensitive_processor.get_all_sensitive_words():
+            show_info_message(self, "提示", "没有敏感词可导出")
             return
 
-        if self.sensitive_manager.add_sensitive_word(sensitive, replacement):
-            show_info_message(self, "添加成功", f"已添加敏感词: {sensitive}")
-            self.sensitive_input.clear()
-            self.replacement_input.clear()
-            self.refresh_table()
-        else:
-            show_error_message(self, "添加失败", "无法添加敏感词，请检查输入")
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "保存导出文件", "sensitive_words.csv",
+            "CSV文件 (*.csv);;Excel文件 (*.xlsx)"
+        )
 
-    def edit_selected(self):
-        """编辑选中的敏感词"""
-        selected_rows = set(item.row() for item in self.sensitive_table.selectedItems())
-        if len(selected_rows) != 1:
-            show_info_message(self, "提示", "请选择一行进行编辑")
-            return
-
-        row = list(selected_rows)[0]
-        original_sensitive = self.sensitive_table.item(row, 0).text()
-        original_replacement = self.sensitive_table.item(row, 1).text()
-
-        # 创建编辑对话框，移除问号按钮
-        dialog = QDialog(self)
-        dialog.setWindowTitle("编辑敏感词")
-        # 关键修改：移除窗口的上下文帮助按钮（问号按钮）
-        dialog.setWindowFlags(dialog.windowFlags() & ~Qt.WindowContextHelpButtonHint)
-        form_layout = QFormLayout(dialog)
-
-        sensitive_edit = QLineEdit(original_sensitive)
-        replacement_edit = QLineEdit(original_replacement)
-
-        form_layout.addRow("敏感词:", sensitive_edit)
-        form_layout.addRow("替换词:", replacement_edit)
-
-        # 对话框按钮
-        btn_layout = QHBoxLayout()
-        ok_btn = QPushButton("确定")
-        cancel_btn = QPushButton("取消")
-        ok_btn.clicked.connect(dialog.accept)
-        cancel_btn.clicked.connect(dialog.reject)
-        btn_layout.addWidget(ok_btn)
-        btn_layout.addWidget(cancel_btn)
-        form_layout.addRow(btn_layout)
-
-        if dialog.exec_() == QDialog.Accepted:
-            new_sensitive = sensitive_edit.text().strip()
-            new_replacement = replacement_edit.text().strip()
-
-            if not new_sensitive:
-                show_error_message(self, "输入错误", "敏感词不能为空")
-                return
-
-            # 更新敏感词
-            self.sensitive_manager.remove_sensitive_word(original_sensitive)
-            if self.sensitive_manager.add_sensitive_word(new_sensitive, new_replacement):
-                show_info_message(self, "编辑成功", "敏感词已更新")
-                self.refresh_table()
-
-    def delete_selected(self):
-        """删除选中的敏感词"""
-        selected_rows = set(item.row() for item in self.sensitive_table.selectedItems())
-        if not selected_rows:
-            show_info_message(self, "提示", "请选择要删除的行")
-            return
-
-        # 按行号从大到小删除
-        for row in sorted(selected_rows, reverse=True):
-            sensitive = self.sensitive_table.item(row, 0).text()
-            self.sensitive_manager.remove_sensitive_word(sensitive)
-
-        show_info_message(self, "删除成功", f"已删除 {len(selected_rows)} 条敏感词")
-        self.refresh_table()
-
-    def save_changes(self):
-        """保存更改"""
-        if self.sensitive_manager.save_sensitive_words():
-            show_info_message(self, "保存成功", "敏感词已保存")
-        else:
-            show_error_message(self, "保存失败", "无法保存敏感词")
+        if file_path:
+            success, msg = self.sensitive_processor.export_to_file(file_path)
+            show_info_message(self, "导出结果", msg)

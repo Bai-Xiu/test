@@ -10,10 +10,13 @@ from core.file_processors import (
 
 
 class LogAIProcessor:
-    def __init__(self, config, sensitive_manager=None):
+    def __init__(self, config):
         self.config = config
         self.api_key = config.get("api_key", "")
-        self.sensitive_manager = sensitive_manager
+
+        # 添加敏感词处理器
+        from core.sensitive_processor import SensitiveWordProcessor
+        self.sensitive_processor = SensitiveWordProcessor(config)
 
         # 区分默认目录和当前目录
         self.default_data_dir = config.get("data_dir", "")  # 持久化的默认目录
@@ -25,8 +28,9 @@ class LogAIProcessor:
         self.verbose = config.get("verbose_logging", False)
         self.supported_encodings = ['utf-8', 'gbk', 'gb2312', 'ansi', 'utf-16', 'utf-16-le']
 
-        # 初始化API客户端
-        self.client = DeepSeekAPI(api_key=self.api_key, sensitive_manager=sensitive_manager) if self.api_key else None
+        # 初始化API客户端，传入敏感词处理器
+        self.client = DeepSeekAPI(api_key=self.api_key,
+                                  sensitive_processor=self.sensitive_processor) if self.api_key else None
 
         # 存储当前选择的文件和数据
         self.current_files = None
@@ -109,6 +113,7 @@ class LogAIProcessor:
                     encodings=self.supported_encodings
                 )
                 data_dict[safe_file] = df
+                print(f"✅ 已读取文件: {safe_file}, 共 {len(df)} 行")
             except Exception as e:
                 raise RuntimeError(f"读取文件 {safe_file} 失败: {str(e)}")
 
@@ -116,7 +121,7 @@ class LogAIProcessor:
         return data_dict
 
     def generate_processing_code(self, user_request, file_names):
-        """生成完整可执行代码"""
+        """生成完整可执行代码，而非函数内部逻辑"""
         if not self.client:
             # 默认代码：直接返回所有数据
             return """import pandas as pd
@@ -125,45 +130,34 @@ class LogAIProcessor:
 
         data_dict = self._load_file_data(file_names)
 
-        # 准备文件元数据（新增：对元数据中的样本进行敏感词替换）
+        # 准备文件元数据
         file_info = {}
         for filename, df in data_dict.items():
-            # 处理样本数据中的敏感信息
-            raw_sample = df.head(2).to_dict(orient='records')
-            processed_sample = raw_sample
-
-            if self.sensitive_manager:
-                # 序列化后替换敏感词
-                sample_str = json.dumps(raw_sample, ensure_ascii=False)
-                processed_sample_str = self.sensitive_manager.replace_sensitive_info(sample_str)
-                processed_sample = json.loads(processed_sample_str)
-
             file_info[filename] = {
                 "columns": df.columns.tolist(),
-                "sample": processed_sample  # 使用处理后的样本
+                "sample": df.head(2).to_dict(orient='records')
             }
 
         prompt = f"""根据用户请求编写完整的Python处理代码:
-    用户需求: {user_request}
-    数据信息: {json.dumps(file_info, ensure_ascii=False)}
+用户需求: {user_request}
+数据信息: {json.dumps(file_info, ensure_ascii=False)}
 
-    说明：
-    *重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
-    0. 注意代码规范，避免参数未定义的错误出现
-    1. 已存在变量data_dict（文件名到DataFrame的字典），可直接使用
-    2. 必须导入所需的库（如pandas）
-    3. 必须定义两个变量：
-        - result_table：处理后的DataFrame结果（必须存在）
-        - summary：字符串类型的总结，根据用户要求，可以包含：
-            * 关键分析结论（如统计数量、趋势、异常点等）
-            * 数据中发现的规律总结
-            * 针对问题的解决方案或建议
-            * 其他用户要求但无法被作为代码执行的信息
-             禁止使用默认值，必须根据分析结果生成具体内容
-    4. 不要包含任何函数定义，直接编写可执行代码
-    5. 不需要return语句，只需确保定义了上述两个变量
-    6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型（如df['level'] = df['level'].astype(str)）
-    7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
+说明：
+重要提示：返回的内容只能是可直接执行的代码，绝对不要有任何其他说明，保证返回的内容可以直接执行
+1. 已存在变量data_dict（文件名到DataFrame的字典），可直接使用
+2. 必须导入所需的库（如pandas）
+3. 必须定义两个变量：
+   - result_table：处理后的DataFrame结果（必须存在）
+   - summary：字符串类型的总结，根据用户要求，可以包含：
+     * 关键分析结论（如统计数量、趋势、异常点等）
+     * 数据中发现的规律总结
+     * 针对问题的解决方案或建议
+     * 其他用户要求但无法被作为代码执行的信息
+     禁止使用默认值，必须根据分析结果生成具体内容
+4. 不要包含任何函数定义，直接编写可执行代码
+5. 不需要return语句，只需确保定义了上述两个变量
+6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型（如df['level'] = df['level'].astype(str)）
+7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
 
         response = self.client.completions_create(
             model='deepseek-reasoner',
@@ -173,35 +167,26 @@ class LogAIProcessor:
         )
 
         code_block = response.choices[0].message.content.strip()
+
         return code_block
 
     def direct_answer(self, user_request, file_names):
-        """直接回答模式：生成日志总结，不返回表格数据，确保所有内容经过敏感词处理"""
+        """直接回答模式：生成日志总结，不返回表格数据"""
         data_dict = self._load_file_data(file_names)
 
-        # 收集文件详细信息（包含敏感词处理）
+        # 收集文件详细信息
         file_details = []
         for filename, df in data_dict.items():
-            # 处理数据样本中的敏感信息
-            raw_sample = df.head(min(3, len(df))).to_dict(orient='records')
-            processed_sample = raw_sample
-
-            if self.sensitive_manager:
-                # 序列化后替换敏感词，再反序列化回字典
-                sample_str = json.dumps(raw_sample, ensure_ascii=False, default=str)
-                processed_sample_str = self.sensitive_manager.replace_sensitive_info(sample_str)
-                processed_sample = json.loads(processed_sample_str)
-
             # 基础信息
             details = {
                 "文件名": filename,
                 "记录数": len(df),
                 "列名": df.columns.tolist(),
                 "数据类型分布": {col: str(df[col].dtype) for col in df.columns},
-                "数据样本": processed_sample  # 使用处理后的样本
+                "数据样本": df.head(min(3, len(df))).to_dict(orient='records')  # 最多3行样本
             }
 
-            # 数值列统计（无需脱敏，数值本身不涉及敏感信息）
+            # 数值列统计
             numeric_stats = {}
             for col in df.columns:
                 if pd.api.types.is_numeric_dtype(df[col]):
@@ -216,24 +201,19 @@ class LogAIProcessor:
 
             file_details.append(details)
 
-        # 处理用户请求中的敏感信息
-        processed_request = user_request
-        if self.sensitive_manager and user_request:
-            processed_request = self.sensitive_manager.replace_sensitive_info(user_request)
-
-        # 构建提示词（使用处理后的请求和文件详情）
+        # 构建提示词
         prompt = f"""基于以下日志文件的详细信息，回答用户问题并生成总结:
-        文件详情: {json.dumps(file_details, ensure_ascii=False, default=str)}
-        用户问题: {processed_request}
+    文件详情: {json.dumps(file_details, ensure_ascii=False, default=str)}
+    用户问题: {user_request}
 
-        回答要求:
-        1. 深入分析日志数据特征、潜在规律和关键信息
-        2. 直接给出自然语言总结，不生成任何表格或结构化数据
-        3. 内容具体有针对性，避免泛泛而谈
-        4. 涉及统计信息时自然体现关键数值
-        5. 用简洁易懂的中文表达"""
+    回答要求:
+    1. 深入分析日志数据特征、潜在规律和关键信息
+    2. 直接给出自然语言总结，不生成任何表格或结构化数据
+    3. 内容具体有针对性，避免泛泛而谈
+    4. 涉及统计信息时自然体现关键数值
+    5. 用简洁易懂的中文表达"""
 
-        # 调用API（API客户端会进行二次全局校验）
+        # 调用API
         response = self.client.completions_create(
             model='deepseek-reasoner',
             prompt=prompt,
@@ -241,10 +221,4 @@ class LogAIProcessor:
             temperature=0.6
         )
 
-        # 还原响应中的敏感信息（如果需要展示原始内容）
-        summary = response.choices[0].message.content.strip()
-        if self.sensitive_manager:
-            summary = self.sensitive_manager.restore_sensitive_info(summary)
-
-
-        return {"summary": summary}
+        return {"summary": response.choices[0].message.content.strip()}

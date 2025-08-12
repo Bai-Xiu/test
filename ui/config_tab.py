@@ -4,7 +4,6 @@ from utils.helpers import show_info_message, show_error_message
 import os
 from core.api_client import DeepSeekAPI
 
-
 class ConfigTab(QWidget):
     def __init__(self, config, parent=None):
         super().__init__(parent)
@@ -70,10 +69,13 @@ class ConfigTab(QWidget):
         api_key = self.api_key_edit.text().strip()
         self.config.set("api_key", api_key)
 
-        # 新增：直接更新处理器的API Key并重新初始化客户端
+        # 更新处理器的API Key并重新初始化客户端，传入敏感词处理器
         if hasattr(self.parent, 'processor'):
             self.parent.processor.api_key = api_key
-            self.parent.processor.client = DeepSeekAPI(api_key=api_key) if api_key else None
+            self.parent.processor.client = DeepSeekAPI(
+                api_key=api_key,
+                sensitive_processor=self.parent.processor.sensitive_processor
+            ) if api_key else None
 
         show_info_message(self, "成功", "API Key已保存并生效")
 
