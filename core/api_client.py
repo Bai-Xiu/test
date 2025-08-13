@@ -2,34 +2,7 @@ import time
 import json
 import os
 from datetime import datetime
-
-
-class OpenAIStub:
-    """OpenAI客户端的占位类，当未安装openai库时使用"""
-
-    def __init__(self, *args, **kwargs):
-        pass
-
-    class Chat:
-        @staticmethod
-        def completions_create(*args, **kwargs):
-            class DummyResponse:
-                @staticmethod
-                def choices():
-                    class DummyChoice:
-                        message = type('', (), {'content': '演示模式下的响应'})()
-
-                    return [DummyChoice()]
-
-            return DummyResponse()
-
-
-# 尝试导入真实的OpenAI客户端
-try:
-    from openai import OpenAI
-except ImportError:
-    OpenAI = OpenAIStub
-
+from openai import OpenAI
 
 class DeepSeekAPI:
     def __init__(self, api_key, sensitive_processor=None):
@@ -69,15 +42,10 @@ class DeepSeekAPI:
         replace_count = None
         processed_prompt = prompt
         if self.sensitive_processor:
-            # 记录用户输入的分析请求
-            print("\n用户原始分析请求:")
-            print(prompt[:500] + ("..." if len(prompt) > 500 else ""))
 
             processed_prompt, replace_count = self.sensitive_processor.replace_sensitive_words(prompt)
 
             # 显示处理后的请求
-            print("\n处理后的分析请求:")
-            print(processed_prompt[:500] + ("..." if len(processed_prompt) > 500 else ""))
 
         attempt = 0
         while attempt < retry:

@@ -101,7 +101,7 @@ class SensitiveWordTab(QWidget):
         word_input = QLineEdit()
         replacement_input = QLineEdit()
         word_input.setPlaceholderText("请输入敏感词")
-        replacement_input.setPlaceholderText("可选，不填则自动生成")
+        replacement_input.setPlaceholderText("可选")
 
         # 设置布局
         layout = QGridLayout()

@@ -30,7 +30,6 @@ class SensitiveWordProcessor:
             try:
                 with open(self.sensitive_file, 'w', encoding='utf-8') as f:
                     json.dump({}, f, ensure_ascii=False, indent=2)
-                print(f"创建新的敏感词文件: {self.sensitive_file}")
             except Exception as e:
                 print(f"创建敏感词文件失败: {str(e)}")
 
@@ -61,10 +60,8 @@ class SensitiveWordProcessor:
             self.sensitive_words = {k: v for k, v in self.sensitive_words.items()}
             self._sort_sensitive_words()
 
-            print(f"已加载 {len(self.sensitive_words)} 个敏感词")
             return True
         except Exception as e:
-            print(f"加载敏感词失败: {str(e)}")
             return False
 
     def save_sensitive_words(self):
@@ -72,10 +69,9 @@ class SensitiveWordProcessor:
         try:
             with open(self.sensitive_file, 'w', encoding='utf-8') as f:
                 json.dump(self.sensitive_words, f, ensure_ascii=False, indent=2)
-            print(f"已保存 {len(self.sensitive_words)} 个敏感词")
+
             return True
         except Exception as e:
-            print(f"保存敏感词失败: {str(e)}")
             return False
 
     def add_sensitive_word(self, word, replacement=None):
@@ -96,7 +92,6 @@ class SensitiveWordProcessor:
         self.sensitive_words[word] = replacement
         self._sort_sensitive_words()
         self.save_sensitive_words()
-        print(f"添加敏感词: {word} -> {replacement}")
         return True, "添加成功"
 
     def remove_sensitive_word(self, word):
@@ -137,7 +132,6 @@ class SensitiveWordProcessor:
         self.sensitive_words[new_word] = new_replacement
         self._sort_sensitive_words()
         self.save_sensitive_words()
-        print(f"更新敏感词: {old_word} -> {new_word} ({new_replacement})")
         return True, "更新成功"
 
     def import_from_file(self, file_path):
@@ -235,14 +229,6 @@ class SensitiveWordProcessor:
             key=lambda x: len(x[0]),
             reverse=True
         )
-        print(f"敏感词处理顺序（共{len(sorted_words)}个）：{[w[0] for w in sorted_words]}")
-
-        # 记录原始文本中包含的敏感词
-        original_sensitive = [word for word, _ in sorted_words if word in text]
-        if original_sensitive:
-            print(f"原始文本中包含的敏感词: {original_sensitive}")
-        else:
-            print("原始文本中未发现敏感词")
 
         for word, replacement in sorted_words:
             try:
@@ -256,17 +242,14 @@ class SensitiveWordProcessor:
                 if count > 0:
                     replace_count[word] = count
                     replaced_text = new_text  # 直接使用替换后的文本更新
-                    print(f"替换敏感词: {word} -> {replacement}，次数: {count}")
                     # 优化替换示例的获取方式（基于新文本）
                     sample_start = max(0, replaced_text.find(replacement) - 20)
                     sample_end = min(len(replaced_text), sample_start + 100)
-                    print(f"替换示例: {replaced_text[sample_start:sample_end]}...")
 
             except Exception as e:
                 print(f"替换敏感词'{word}'时出错: {str(e)}")
 
         total_count = sum(replace_count.values())
-        print(f"敏感词替换完成，共替换 {len(replace_count)} 种敏感词，总替换次数: {total_count}")
         return replaced_text, replace_count
 
     def restore_sensitive_words(self, text):

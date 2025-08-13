@@ -113,12 +113,74 @@ class LogAIProcessor:
                     encodings=self.supported_encodings
                 )
                 data_dict[safe_file] = df
-                print(f"✅ 已读取文件: {safe_file}, 共 {len(df)} 行")
             except Exception as e:
                 raise RuntimeError(f"读取文件 {safe_file} 失败: {str(e)}")
 
         self.current_data = data_dict
         return data_dict
+
+    def process_and_anonymize_files(self, file_names, output_dir):
+        """处理并去敏文件"""
+        if not file_names:
+            raise ValueError("未选择文件")
+
+        if not output_dir or not os.path.exists(output_dir):
+            raise ValueError("无效的输出目录")
+
+        data_dict = self._load_file_data(file_names)
+        results = {}
+
+        for filename, df in data_dict.items():
+            # 对DataFrame中的文本进行去敏处理
+            anonymized_df = self._anonymize_dataframe(df)
+
+            # 保存去敏后的文件
+            base_name = os.path.splitext(filename)[0]
+            ext = os.path.splitext(filename)[1]
+            output_path = os.path.join(
+                output_dir,
+                f"{base_name}_anonymized{ext}"
+            )
+
+            # 根据文件类型保存
+            _, ext = os.path.splitext(filename)
+            if ext.lower() in ['.csv']:
+                anonymized_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+            elif ext.lower() in ['.xlsx', '.xls']:
+                anonymized_df.to_excel(output_path, index=False)
+            elif ext.lower() in ['.json']:
+                anonymized_df.to_json(output_path, orient='records', force_ascii=False)
+            else:  # 文本文件
+                content = "\n".join(anonymized_df.iloc[:, 0].astype(str).tolist())
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+
+            results[filename] = output_path
+
+        return results
+
+    def _anonymize_dataframe(self, df):
+        """对DataFrame进行去敏处理"""
+        df_copy = df.copy()
+
+        # 对每一列进行处理
+        for col in df_copy.columns:
+            # 处理字符串类型的列
+            if df_copy[col].dtype == 'object':
+                df_copy[col] = df_copy[col].apply(
+                    lambda x: self._anonymize_text(str(x)) if pd.notna(x) else x
+                )
+
+        return df_copy
+
+    def _anonymize_text(self, text):
+        """对文本进行去敏处理"""
+        if not text or not isinstance(text, str):
+            return text
+
+        # 使用敏感词处理器进行替换
+        anonymized_text, _ = self.sensitive_processor.replace_sensitive_words(text)
+        return anonymized_text
 
     def generate_processing_code(self, user_request, file_names):
         """生成完整可执行代码，而非函数内部逻辑"""

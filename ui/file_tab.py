@@ -94,6 +94,12 @@ class FileTab(QWidget):
         layout.addWidget(splitter)
         layout.addWidget(self.next_btn)
 
+        # 在按钮布局添加去敏相关按钮
+        self.anonymize_btn = QPushButton("去敏选中文件")
+        self.anonymize_btn.clicked.connect(self.anonymize_selected_files)
+        self.anonymize_btn.setEnabled(False)
+        btn_layout.addWidget(self.anonymize_btn)
+
         # 初始加载文件列表
         self.update_file_list()
 
@@ -223,6 +229,9 @@ class FileTab(QWidget):
     def update_next_button(self):
         """更新下一步按钮状态"""
         self.next_btn.setEnabled(len(self.selected_files) > 0)
+        has_files = len(self.selected_files) > 0  # 补充缺失的 has_files 定义
+        self.next_btn.setEnabled(has_files)
+        self.anonymize_btn.setEnabled(has_files)
 
     def go_to_analysis(self):
         """前往分析标签页"""
@@ -234,3 +243,35 @@ class FileTab(QWidget):
     def get_selected_files(self):
         """获取选中的文件列表"""
         return self.selected_files.copy()
+
+    def anonymize_selected_files(self):
+        """对选中的文件进行去敏处理"""
+        if not self.selected_files:
+            show_info_message(self, "提示", "请先选择文件")
+            return
+
+        # 选择保存目录
+        save_dir = QFileDialog.getExistingDirectory(
+            self, "选择去敏文件保存目录",
+            self.config.get("save_dir", "")
+        )
+
+        if not save_dir:
+            return
+
+        try:
+            # 执行去敏处理
+            results = self.processor.process_and_anonymize_files(
+                self.selected_files,
+                save_dir
+            )
+
+            # 显示结果
+            msg = "成功去敏并保存以下文件：\n"
+            for original, anonymized in results.items():
+                msg += f"- {original} → {os.path.basename(anonymized)}\n"
+
+            show_info_message(self, "成功", msg)
+
+        except Exception as e:
+            show_error_message(self, "处理失败", f"去敏过程出错: {str(e)}")
