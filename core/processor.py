@@ -158,7 +158,8 @@ class LogAIProcessor:
 4. 不要包含任何函数定义，直接编写可执行代码
 5. 不需要return语句，只需确保定义了上述两个变量
 6. 处理日志时，务必将包含类似"低/中/高"等含中文的字符串的列显式转换为字符串类型（如df['level'] = df['level'].astype(str)）
-7. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
+7. 对于时间/日期类型的列（如包含timestamp、datetime的列），必须显式转换为字符串类型（如df['time'] = df['time'].astype(str)），确保导出格式正确
+8. 处理日志时，对于确定同义的表头信息，建议使用统一的名称，并对内容进行整合"""
 
         response = self.client.completions_create(
             model='deepseek-reasoner',
@@ -221,5 +222,6 @@ class LogAIProcessor:
             max_tokens=2000,
             temperature=0.6
         )
+
 
         return {"summary": response.choices[0].message.content.strip()}
