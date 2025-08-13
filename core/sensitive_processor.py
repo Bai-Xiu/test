@@ -4,6 +4,7 @@ import os
 import random
 import string
 import pandas as pd
+import uuid
 from datetime import datetime
 from utils.helpers import show_info_message, show_error_message
 
@@ -19,9 +20,8 @@ class SensitiveWordProcessor:
         )
         self.supported_encodings = ['utf-8', 'gbk', 'gb2312']
 
-        # 确保文件存在
+        # 确保文件存在并加载敏感词
         self._ensure_file_exists()
-        # 加载敏感词
         self.load_sensitive_words()
 
     def _ensure_file_exists(self):
@@ -59,7 +59,6 @@ class SensitiveWordProcessor:
             # 去重并排序
             self.sensitive_words = {k: v for k, v in self.sensitive_words.items()}
             self._sort_sensitive_words()
-
             return True
         except Exception as e:
             return False
@@ -69,7 +68,6 @@ class SensitiveWordProcessor:
         try:
             with open(self.sensitive_file, 'w', encoding='utf-8') as f:
                 json.dump(self.sensitive_words, f, ensure_ascii=False, indent=2)
-
             return True
         except Exception as e:
             return False
@@ -214,42 +212,31 @@ class SensitiveWordProcessor:
         except Exception as e:
             return False, f"导出失败: {str(e)}"
 
-    # 修改replace_sensitive_words方法，完善日志输出
     def replace_sensitive_words(self, text):
-        """替换文本中的敏感词，返回替换后的文本和替换计数"""
+        """替换文本中的敏感词，包括抬头部分"""
         if not text or not isinstance(text, str) or not self.sensitive_words:
             return text, {}
 
         replaced_text = text
         replace_count = {}
 
-        # 按长度降序处理，避免子串冲突（现有逻辑正确，保留）
-        sorted_words = sorted(
-            self.sensitive_words.items(),
-            key=lambda x: len(x[0]),
-            reverse=True
-        )
-
-        for word, replacement in sorted_words:
+        # 按长度降序处理，避免子串冲突（长词优先）
+        for word, replacement in self.sensitive_words.items():
             try:
+                # 转义敏感词中的特殊字符
                 escaped_word = re.escape(word)
-                # 保持原有的匹配模式（忽略大小写、多行）
-                pattern = re.compile(escaped_word, re.IGNORECASE | re.MULTILINE)
-
-                # 关键修复：使用subn一次完成替换并获取次数，避免重复操作
-                new_text, count = pattern.subn(replacement, replaced_text)
+                # 匹配所有位置的敏感词（包括开头和中间）
+                pattern = re.compile(f'{escaped_word}')
+                # 执行替换并计数
+                temp_text, count = pattern.subn(replacement, replaced_text)
 
                 if count > 0:
-                    replace_count[word] = count
-                    replaced_text = new_text  # 直接使用替换后的文本更新
-                    # 优化替换示例的获取方式（基于新文本）
-                    sample_start = max(0, replaced_text.find(replacement) - 20)
-                    sample_end = min(len(replaced_text), sample_start + 100)
+                    replace_count[word] = replace_count.get(word, 0) + count
+                    replaced_text = temp_text
 
             except Exception as e:
                 print(f"替换敏感词'{word}'时出错: {str(e)}")
 
-        total_count = sum(replace_count.values())
         return replaced_text, replace_count
 
     def restore_sensitive_words(self, text):
@@ -261,7 +248,6 @@ class SensitiveWordProcessor:
 
         # 替换还原
         for replacement, word in self.replacement_map.items():
-            # 转义特殊字符
             escaped_replacement = re.escape(replacement)
             pattern = re.compile(escaped_replacement)
             restored_text = pattern.sub(word, restored_text)
