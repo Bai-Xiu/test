@@ -229,7 +229,7 @@ class SensitiveWordProcessor:
         replaced_text = text
         replace_count = {}
 
-        # 按长度降序处理，避免子串冲突
+        # 按长度降序处理，避免子串冲突（现有逻辑正确，保留）
         sorted_words = sorted(
             self.sensitive_words.items(),
             key=lambda x: len(x[0]),
@@ -247,25 +247,26 @@ class SensitiveWordProcessor:
         for word, replacement in sorted_words:
             try:
                 escaped_word = re.escape(word)
+                # 保持原有的匹配模式（忽略大小写、多行）
                 pattern = re.compile(escaped_word, re.IGNORECASE | re.MULTILINE)
 
-                # 先计算替换次数
-                temp_text = replaced_text
-                _, count = pattern.subn(replacement, temp_text)
+                # 关键修复：使用subn一次完成替换并获取次数，避免重复操作
+                new_text, count = pattern.subn(replacement, replaced_text)
 
                 if count > 0:
                     replace_count[word] = count
-                    replaced_text = pattern.sub(replacement, replaced_text)
+                    replaced_text = new_text  # 直接使用替换后的文本更新
                     print(f"替换敏感词: {word} -> {replacement}，次数: {count}")
-                    # 显示替换后的部分内容（前100字符）
-                    sample_start = max(0, text.find(word) - 20)
-                    sample_end = min(len(replaced_text), text.find(word) + len(replacement) + 20)
-                    print(f"替换示例: ...{replaced_text[sample_start:sample_end]}...")
+                    # 优化替换示例的获取方式（基于新文本）
+                    sample_start = max(0, replaced_text.find(replacement) - 20)
+                    sample_end = min(len(replaced_text), sample_start + 100)
+                    print(f"替换示例: {replaced_text[sample_start:sample_end]}...")
 
             except Exception as e:
-                print(f"处理敏感词 {word} 时出错: {str(e)}")
+                print(f"替换敏感词'{word}'时出错: {str(e)}")
 
-        print(f"敏感词替换完成，共替换 {len(replace_count)} 种敏感词，总替换次数: {sum(replace_count.values())}")
+        total_count = sum(replace_count.values())
+        print(f"敏感词替换完成，共替换 {len(replace_count)} 种敏感词，总替换次数: {total_count}")
         return replaced_text, replace_count
 
     def restore_sensitive_words(self, text):
