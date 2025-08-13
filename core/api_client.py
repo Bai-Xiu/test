@@ -14,26 +14,6 @@ class DeepSeekAPI:
             base_url="https://api.deepseek.com"
         )
 
-    def _log_api_interaction(self, prompt, response, replace_count=None):
-        """仅在终端显示日志，不写入文件"""
-        try:
-            log_data = {
-                "timestamp": datetime.now().isoformat(),
-                "prompt_length": len(prompt),
-                "response_status": "success" if response else "error",
-                "response_length": len(response.choices[0].message.content) if response else 0,
-                "replace_count": replace_count if replace_count else {}
-            }
-            # 仅在终端打印日志信息
-            print("\nAPI交互日志:")
-            print(f"时间: {log_data['timestamp']}")
-            print(f"请求长度: {log_data['prompt_length']} 字符")
-            print(f"响应状态: {log_data['response_status']}")
-            print(f"响应长度: {log_data['response_length']} 字符")
-            print(f"敏感词替换计数: {log_data['replace_count']}")
-        except Exception as e:
-            print(f"API日志记录失败: {str(e)}")
-
     def completions_create(self, model="deepseek-reasoner", prompt=None, max_tokens=5000, temperature=0.3, retry=3):
         if not prompt:
             raise ValueError("prompt不能为空")
@@ -63,9 +43,6 @@ class DeepSeekAPI:
                     stream=False
                 )
 
-                # 记录API交互日志
-                self._log_api_interaction(processed_prompt, response, replace_count)
-
                 # 敏感词还原
                 if self.sensitive_processor and response.choices[0].message.content:
                     response.choices[0].message.content = self.sensitive_processor.restore_sensitive_words(
@@ -78,9 +55,7 @@ class DeepSeekAPI:
                 error_msg = f"API调用出错 (尝试 {attempt}/{retry}): {str(e)}"
                 print(error_msg)
 
-                # 记录错误日志
-                self._log_api_interaction(processed_prompt, None, replace_count)
-
                 if attempt < retry:
                     time.sleep(2)
+
         raise Exception(f"API调用失败，已达到最大重试次数 ({retry}次)")
