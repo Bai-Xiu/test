@@ -98,7 +98,6 @@ class SensitiveWordProcessor:
             del self.sensitive_words[word]
             self._sort_sensitive_words()
             self.save_sensitive_words()
-            print(f"删除敏感词: {word}")
             return True, "删除成功"
         return False, "敏感词不存在"
 
@@ -260,3 +259,4 @@ class SensitiveWordProcessor:
     def get_all_sensitive_words(self):
         """获取所有敏感词列表"""
         return [(k, v) for k, v in self.sensitive_words.items()]
+
