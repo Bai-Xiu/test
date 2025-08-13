@@ -281,7 +281,7 @@ class LogAIProcessor:
         response = self.client.completions_create(
             model='deepseek-reasoner',
             prompt=prompt,
-            max_tokens=2000,
+            max_tokens=5000,
             temperature=0.6
         )
 

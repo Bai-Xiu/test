@@ -239,20 +239,32 @@ class SensitiveWordProcessor:
         return replaced_text, replace_count
 
     def restore_sensitive_words(self, text):
-        """将替换后的文本还原为原始文本"""
+        """将文本中的替换词还原为原始敏感词"""
         if not text or not isinstance(text, str) or not self.replacement_map:
             return text
 
         restored_text = text
+        replace_count = {}
 
-        # 替换还原
-        for replacement, word in self.replacement_map.items():
-            escaped_replacement = re.escape(replacement)
-            pattern = re.compile(escaped_replacement)
-            restored_text = pattern.sub(word, restored_text)
+        # 按替换词长度降序处理，避免子串冲突
+        sorted_replacements = sorted(
+            self.replacement_map.items(),
+            key=lambda x: len(x[0]),
+            reverse=True
+        )
 
-        # 移除说明文本
-        restored_text = restored_text.replace("\n\n内容中部分词汇已进行标准化替换，不影响语义理解", "")
+        for replacement, word in sorted_replacements:
+            try:
+                escaped_replacement = re.escape(replacement)
+                pattern = re.compile(escaped_replacement, re.IGNORECASE | re.MULTILINE)
+
+                # 计算还原次数
+                _, count = pattern.subn(word, restored_text)
+                if count > 0:
+                    replace_count[replacement] = count
+                    restored_text = pattern.sub(word, restored_text)
+            except Exception as e:
+                print(f"还原敏感词 {replacement} 失败: {str(e)}")
 
         return restored_text
 
